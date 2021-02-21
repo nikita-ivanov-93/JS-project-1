@@ -64,7 +64,6 @@ function init(){
           text: document.querySelector('[data-role=review-text]').value,
         },
       };
-      console.log(dataReview);
       dataToStorage(dataReview);
       addPlaceMark(coords);
       myMap.balloon.close();
@@ -83,7 +82,6 @@ function init(){
     }; 
     reviewsArr.push(dataReview.review);
     storage[storageCoords] = JSON.stringify(reviewsArr);
-    console.log(storage);
   }
   
   // Открытие формы с отображением существующих отзывов 
