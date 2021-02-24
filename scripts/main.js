@@ -2,31 +2,37 @@ ymaps.ready(init);
 let myMap;
 let coords;
 let storage = localStorage;
+let clusterer;
 const form = document.querySelector('#modal').innerHTML;
 function init(){
-
+  
   // Инициализация кластера
   
-  const clusterer = new ymaps.Clusterer({
-    groupByCoordinates: false,
+  clusterer = new ymaps.Clusterer({
+    groupByCoordinates: true,
     clusterDisableClickZoom: true,
     clusterOpenBalloonOnClick: false,
   });
   clusterer.events.add('click', (e) => {
-    const coords = e.get('target').geometry.getCoordinates();
+    coords = e.get('target').geometry.getCoordinates();
     openReviewForm(coords);
-  });
-
-   // Инициализация карты
-
+  })
+  
+  // Инициализация карты
+  
   myMap = new ymaps.Map("map", {
     center: [55.76, 37.64],
     zoom: 8,
   }, {
     searchControlProvider: 'yandex#search'
   });
+
+  // Добавление кластера
   
+  myMap.geoObjects.add(clusterer);
+ 
   // Отрытие балуна с формой в любой точке карты
+  
   myMap.events.add('click', function (e) {
     coords = e.get('coords');
     if (!myMap.balloon.isOpen()) {
@@ -36,22 +42,8 @@ function init(){
       myMap.balloon.close();
     }
   });
-  
-  myMap.geoObjects.add(clusterer);
-  
-  // Загрузка placemark из local storage
 
-  for(let coords in storage) {
-    if (!storage.hasOwnProperty(coords)) {
-      continue; 
-    };
-    for (const item of JSON.parse(storage[coords])) {
-      addPlaceMark(JSON.parse(coords));
-    }
-  }
-  
-
-  // Добавление геоотзыва
+  // Обработка клика для добавления данных в local storage
 
   document.addEventListener('click', function(e) {
     if (e.target.dataset.role === 'review-button') {
@@ -59,63 +51,97 @@ function init(){
       const dataReview = {
         coords,
         review: {
-          name: document.querySelector('[data-role=review-name]').value,
+          name:   document.querySelector('[data-role=review-name]').value,
           place: document.querySelector('[data-role=review-place]').value,
           text: document.querySelector('[data-role=review-text]').value,
         },
       };
-      dataToStorage(dataReview);
-      addPlaceMark(coords);
-      myMap.balloon.close();
+      // Написать функцию валидации!!
+      validate(dataReview);
     }  
-  })
-
-  // Сохранение данных local storage 
-
-  function dataToStorage(dataReview) {
-    let reviewsArr;
-    const storageCoords = JSON.stringify(dataReview.coords);
-    if (storage[storageCoords]) {
-      reviewsArr = JSON.parse(storage[storageCoords]);
-    } else {
-      reviewsArr = [];
-    }; 
-    reviewsArr.push(dataReview.review);
-    storage[storageCoords] = JSON.stringify(reviewsArr);
-  }
+  });
   
-  // Открытие формы с отображением существующих отзывов 
+  // Загрузка placemark из local storage
+  for(const item of JSON.parse(storage.reviews)) {
+    for (const review of item.reviews) {
+      addPlaceMark(item.coords);
+    }
+  };
+}
 
-  function openReviewForm(coords) {
-    const dataFromStorage = JSON.parse(storage[JSON.stringify(coords)]);
-    const formReview = document.createElement('div');
-    formReview.innerHTML = form;
-    const reviewList = formReview.querySelector('.review-list');
-    for (const item of dataFromStorage) {
-      const div = document.createElement('div');
-      div.classList.add('review-item');
-      div.innerHTML = `
-      <div>
-      <b>${item.name}</b> [${item.place}]
-      </div>
-      <div>${item.text}</div>
-      `;
-      reviewList.appendChild(div);
-    };
-    myMap.balloon.open(coords, formReview.innerHTML);
+//Валидация формы
+
+function validate(dataReview) {
+  try {
+    for (const option in dataReview.review) {
+      if (dataReview.review[option] === '') {
+        throw new Error('Есть незаполненные поля!!!');
+      }
+    }
+    dataToStorage(dataReview);
+    addPlaceMark(dataReview.coords);
+    myMap.balloon.close();
+  } catch (e) {
+    alert(e.message);
   }
+}
 
-  // Добавление  placemark
+// Функция сохранения данных в local storage 
 
-  function addPlaceMark(coords) {
-    const placemark = new ymaps.Placemark(coords);
-    placemark.events.add('click', (e) => {
-      const coords = e.get('target').geometry.getCoordinates();
-      openReviewForm(coords);
-    })
-    clusterer.add(placemark);
-  }  
-};
+function dataToStorage(dataReview) {
+  let dataFromStorage;
+  if (!storage.reviews) {
+    dataFromStorage = [];
+  } else {
+    dataFromStorage = JSON.parse(storage.reviews);
+  };
+  let haveSameCoords = false;
+  for (const item of dataFromStorage) {
+    if (item.coords) {
+      if ((item.coords).join() === (dataReview.coords).join()) {
+        item.reviews.push(dataReview.review);
+        haveSameCoords = true;
+      };
+    }
+  };
+  if (!haveSameCoords) {
+    const newItem = {}; 
+    dataFromStorage.push(newItem);
+    newItem.coords = dataReview.coords;
+    const reviewsArr = newItem.reviews = [];
+    reviewsArr.push(dataReview.review);
+  };
+  storage.reviews = JSON.stringify(dataFromStorage);
+}
 
+// Функция Открытия формы с отображением существующих отзывов 
 
+function openReviewForm(coords) {
+  const dataFromStorage = JSON.parse(storage.reviews);
+  const formReview = document.createElement('div');
+  formReview.innerHTML = form;
+  const reviewList = formReview.querySelector('.review-list');
+  for (const item of dataFromStorage) {
+    if ((item.coords).join() === (coords).join()) {
+      for (const review of item.reviews) {
+        const div = document.createElement('div');
+        div.classList.add('review-item');
+        div.innerHTML = `
+        <div>
+        <b>${review.name}</b> [${review.place}]
+        </div>
+        <div>${review.text}</div>
+        `;
+        reviewList.appendChild(div);
+      }
+    }; 
+  };
+  myMap.balloon.open(coords, formReview.innerHTML);
+}
 
+// Функция добавления  placemark
+
+function addPlaceMark(coords) {
+  const placemark = new ymaps.Placemark(coords);
+  clusterer.add(placemark);
+}  
